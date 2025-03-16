@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>LPG Market Share by District (CY & LY)</title>
+  <!-- Include Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    h1 { text-align: center; }
+    #controls { text-align: center; margin-bottom: 20px; }
+    #controls label { margin: 0 10px; }
+    #controls select { padding: 5px; margin: 0 10px; }
+    #chartContainer, #tableContainer { width: 90%; margin: auto; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    table, th, td { border: 1px solid #aaa; }
+    th, td { padding: 8px; text-align: center; }
+    th { background-color: #eee; }
+  </style>
+</head>
+<body>
+  <h1>LPG Market Share by District (CY & LY)</h1>
+
+  <!-- Controls: Category and Area Office (no State filter) -->
+  <div id="controls">
+    <label for="categorySelect">Category:</label>
+    <select id="categorySelect">
+      <option value="Total">Total</option>
+      <option value="Domestic">Domestic</option>
+      <option value="Commercial">Commercial</option>
+      <option value="FTL">FTL</option>
+      <option value="Bulk">Bulk</option>
+      <option value="Auto">Auto</option>
+    </select>
+
+    <label for="areaOfficeSelect">Area Office:</label>
+    <select id="areaOfficeSelect">
+      <option value="">Select Area Office</option>
+      <!-- You can add as many as needed -->
+      <option value="4211 Ernakulam (Kochi) IDO">4211 Ernakulam (Kochi) IDO</option>
+      <option value="4212 Kozhicode IDO">4212 Kozhicode IDO</option>
+    </select>
+  </div>
+
+  <!-- Chart container -->
+  <div id="chartContainer">
+    <canvas id="districtChart"></canvas>
+  </div>
+
+  <!-- Table container for market share -->
+  <div id="tableContainer"></div>
+
+  <script>
+    let jsonData = [];
+    let districtChart;
+
+    // Load the selected category's JSON data
+    function loadData() {
+      const category = document.getElementById('categorySelect').value;
+      fetch(category + '.json')
+        .then(response => response.json())
+        .then(data => {
+          jsonData = data;
+          updateChart(); // Attempt to update chart if an Area Office is already selected
+        })
+        .catch(error => console.error('Error loading data:', error));
+    }
+
+    // Generate the market share table.
+    // For each district, compute market share (excluding OIL) for IOCL, BPCL, HPC.
+    // Display the difference in IOCL's market share (CY vs LY) after the District name.
+    function updateTable(districtAgg) {
+      let tableHTML = '<table><thead><tr><th>District</th>' +
+                      '<th>IOCL CY %</th><th>BPCL CY %</th><th>HPC CY %</th>' +
+                      '<th>IOCL LY %</th><th>BPCL LY %</th><th>HPC LY %</th>' +
+                      '</tr></thead><tbody>';
+
+      for (const dist in districtAgg) {
+        const totalCY = districtAgg[dist].iocCY + districtAgg[dist].bpcCY + districtAgg[dist].hpcCY;
+        const totalLY = districtAgg[dist].iocLY + districtAgg[dist].bpcLY + districtAgg[dist].hpcLY;
+
+        // Calculate market share percentages
+        const ioclCYShare = totalCY ? ((districtAgg[dist].iocCY / totalCY) * 100).toFixed(2) : "0.00";
+        const bpclCYShare = totalCY ? ((districtAgg[dist].bpcCY / totalCY) * 100).toFixed(2) : "0.00";
+        const hpcCYShare = totalCY ? ((districtAgg[dist].hpcCY / totalCY) * 100).toFixed(2) : "0.00";
+
+        const ioclLYShare = totalLY ? ((districtAgg[dist].iocLY / totalLY) * 100).toFixed(2) : "0.00";
+        const bpclLYShare = totalLY ? ((districtAgg[dist].bpcLY / totalLY) * 100).toFixed(2) : "0.00";
+        const hpcLYShare = totalLY ? ((districtAgg[dist].hpcLY / totalLY) * 100).toFixed(2) : "0.00";
+
+        // Compare IOCL's market share CY vs LY
+        const diff = parseFloat(ioclCYShare) - parseFloat(ioclLYShare);
+        let colorStyle = "";
+        if (diff < 0) {
+          colorStyle = "color:red";
+        } else if (diff > 0) {
+          colorStyle = "color:green";
+        } else {
+          colorStyle = "color:black";
+        }
+
+        // Format the difference string, e.g., (-0.59%)
+        const diffStr = (diff >= 0 ? `+${diff.toFixed(2)}` : diff.toFixed(2)) + "%";
+
+        tableHTML += `<tr>
+          <td style="${colorStyle}">${dist} (${diffStr})</td>
+          <td>${ioclCYShare}%</td>
+          <td>${bpclCYShare}%</td>
+          <td>${hpcCYShare}%</td>
+          <td>${ioclLYShare}%</td>
+          <td>${bpclLYShare}%</td>
+          <td>${hpcLYShare}%</td>
+        </tr>`;
+      }
+      tableHTML += '</tbody></table>';
+      document.getElementById('tableContainer').innerHTML = tableHTML;
+    }
+
+    // Update the chart (and the table) based on the selected Area Office
+    function updateChart() {
+      const selectedAreaOffice = document.getElementById('areaOfficeSelect').value;
+      if (!selectedAreaOffice) {
+        // No Area Office selected, clear chart & table
+        if (districtChart) districtChart.destroy();
+        document.getElementById('tableContainer').innerHTML = '';
+        return;
+      }
+
+      // Filter data by the selected Area Office
+      const filteredData = jsonData.filter(record => record.AREA_OFFICE === selectedAreaOffice);
+
+      // Group data by District, summing up CY & LY volumes for IOCL, BPCL, HPC
+      const districtAgg = {};
+      filteredData.forEach(rec => {
+        const dist = rec.DISTRICT;
+        if (!districtAgg[dist]) {
+          districtAgg[dist] = {
+            iocCY: 0, iocLY: 0,
+            bpcCY: 0, bpcLY: 0,
+            hpcCY: 0, hpcLY: 0
+          };
+        }
+        districtAgg[dist].iocCY += Number(rec["IOC-CY"] || 0);
+        districtAgg[dist].iocLY += Number(rec["IOC-LY"] || 0);
+        districtAgg[dist].bpcCY += Number(rec["BPC-CY"] || 0);
+        districtAgg[dist].bpcLY += Number(rec["BPC-LY"] || 0);
+        districtAgg[dist].hpcCY += Number(rec["HPC-CY"] || 0);
+        districtAgg[dist].hpcLY += Number(rec["HPC-LY"] || 0);
+      });
+
+      // Prepare arrays for Chart.js
+      const districts = Object.keys(districtAgg);
+      const iocCY = districts.map(d => districtAgg[d].iocCY);
+      const iocLY = districts.map(d => districtAgg[d].iocLY);
+      const bpcCY = districts.map(d => districtAgg[d].bpcCY);
+      const bpcLY = districts.map(d => districtAgg[d].bpcLY);
+      const hpcCY = districts.map(d => districtAgg[d].hpcCY);
+      const hpcLY = districts.map(d => districtAgg[d].hpcLY);
+
+      // Destroy previous chart if it exists
+      if (districtChart) districtChart.destroy();
+      const ctx = document.getElementById('districtChart').getContext('2d');
+
+      // Order changed so LY is first, then CY
+      districtChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: districts,
+          datasets: [
+            { label: 'IOCL (LY)', data: iocLY, backgroundColor: 'rgba(243,112,34,0.4)' },
+            { label: 'IOCL (CY)', data: iocCY, backgroundColor: 'rgba(243,112,34,1)' },
+            { label: 'BPCL (LY)', data: bpcLY, backgroundColor: 'rgba(255,215,0,0.7)' },
+            { label: 'BPCL (CY)', data: bpcCY, backgroundColor: 'rgba(255,255,0,1)' },
+            { label: 'HPC (LY)', data: hpcLY, backgroundColor: 'rgba(0,0,107,0.4)' },
+            { label: 'HPC (CY)', data: hpcCY, backgroundColor: 'rgba(0,0,107,1)' }
+          ]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            title: {
+              display: true,
+              text: `Volumes by District (${selectedAreaOffice}): CY vs LY`
+            }
+          },
+          scales: {
+            x: { title: { display: true, text: 'Districts' } },
+            y: { beginAtZero: true, title: { display: true, text: 'Volume' } }
+          }
+        }
+      });
+
+      updateTable(districtAgg);
+    }
+
+    // Event listeners
+    document.getElementById('categorySelect').addEventListener('change', loadData);
+    document.getElementById('areaOfficeSelect').addEventListener('change', updateChart);
+
+    // Initial load for the default category (Total)
+    loadData();
+  </script>
+</body>
+</html>
